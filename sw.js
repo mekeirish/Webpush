@@ -1,4 +1,4 @@
-// Service Worker pour LB Push Tester
+// Service Worker LB Push Tester
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', () => self.clients.claim());
