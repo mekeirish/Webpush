@@ -8,7 +8,6 @@ self.addEventListener('push', (event) => {
     const options = {
       body: payload.message || 'Signal d\'arrière-plan reçu',
       icon: './icon.png', 
-      badge: './badge.png',
       vibrate: [200, 100, 200],
       data: {
         url: payload.click || self.location.origin
@@ -19,7 +18,7 @@ self.addEventListener('push', (event) => {
       self.registration.showNotification(payload.title || 'Notification Native', options)
     );
   } catch (err) {
-    // Si ntfy envoie du texte brut au lieu du JSON structuré Web Push
+    // Fallback si ntfy envoie du texte brut
     event.waitUntil(
       self.registration.showNotification('Alerte Kool', {
         body: event.data.text(),
@@ -29,7 +28,7 @@ self.addEventListener('push', (event) => {
   }
 });
 
-// Gère le clic sur la notification pour focus ou ouvrir la PWA
+// Gère le clic sur la notification
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   
@@ -37,14 +36,14 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Si la PWA est déjà ouverte, on se contente de la focus
+      // Si la PWA est ouverte, on focus la fenêtre
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
         if (client.url === targetUrl && 'focus' in client) {
           return client.focus();
         }
       }
-      // Sinon on ouvre un nouvel onglet/fenêtre PWA
+      // Sinon, on ouvre l'URL
       if (clients.openWindow) {
         return clients.openWindow(targetUrl);
       }
