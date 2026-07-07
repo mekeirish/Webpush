@@ -1,11 +1,18 @@
 {
-  "name": "Webpush",
-  "short_name": "Webpush",
-  "start_url": "./index.html",
+  "name": "LB Push Tester",
+  "short_name": "LBPush",
+  "start_url": "./",
   "display": "standalone",
-  "background_color": "#1a1c20",
-  "theme_color": "#4b6cb7",
+  "background_color": "#12161a",
+  "theme_color": "#12161a",
+  "orientation": "portrait",
   "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "icon.png",
       "sizes": "512x512",
