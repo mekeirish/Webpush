@@ -24,7 +24,8 @@
       const [logs, setLogs] = React.useState([]);
       const [title, setTitle] = React.useState('Notification LB');
       const [message, setMessage] = React.useState('Bonsoir');
-      const [delay, setDelay] = React.useState('30');
+      const [delay, setDelay] = React.useState('5');
+      const [useDelay, setUseDelay] = React.useState(true); // Activer/désactiver le délai
 
       const addLog = (msg, isError = false) => {
         const time = new Date().toLocaleTimeString();
@@ -63,7 +64,7 @@
           setStatus(subscribed ? 'Abonné au flux.' : 'Prêt à l\'activation.');
           addLog(subscribed ? 'Abonnement actif' : 'Aucun abonnement');
           if (subscribed) {
-            addLog('Endpoint: ' + sub.endpoint);
+            addLog('Endpoint: ' + sub.endpoint.substring(0, 60) + '…');
           }
         } catch (err) {
           setStatus('Erreur: ' + err.message);
@@ -76,7 +77,6 @@
         addLog('=== DÉBUT ABONNEMENT ===');
         setStatus('Demande de permission...');
         try {
-          // Vérifier la permission
           const permission = await Notification.requestPermission();
           if (permission !== 'granted') throw new Error('Permission refusée');
           addLog('Permission accordée');
@@ -84,7 +84,6 @@
           const reg = await navigator.serviceWorker.ready;
           addLog('Service Worker ready');
 
-          // Récupérer la clé VAPID
           setStatus('Récupération de la clé VAPID ntfy...');
           addLog('Requête vers https://ntfy.sh/v1/config');
           const configRes = await fetch('https://ntfy.sh/v1/config');
@@ -94,7 +93,6 @@
           if (!publicKey) throw new Error('Clé VAPID introuvable');
           addLog('Clé VAPID récupérée (longueur: ' + publicKey.length + ')');
 
-          // Convertir la clé
           const padding = '='.repeat((4 - publicKey.length % 4) % 4);
           const base64 = (publicKey + padding).replace(/\-/g, '+').replace(/_/g, '/');
           const rawData = window.atob(base64);
@@ -102,7 +100,6 @@
           for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
           addLog('Clé convertie en Uint8Array');
 
-          // S'abonner
           setStatus('Génération du token natif...');
           addLog('Appel à pushManager.subscribe...');
           const subscription = await reg.pushManager.subscribe({
@@ -111,7 +108,6 @@
           });
           addLog('Abonnement créé (endpoint: ' + subscription.endpoint.substring(0, 50) + '…)');
 
-          // Enregistrer sur ntfy
           setStatus('Liaison avec le serveur ntfy...');
           addLog('Envoi de l’abonnement à ntfy.sh/' + TOPIC + '/webpush');
           const pushRes = await fetch(`https://ntfy.sh/${TOPIC}/webpush`, {
@@ -119,7 +115,10 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(subscription)
           });
-          if (!pushRes.ok) throw new Error(`HTTP ${pushRes.status}`);
+          if (!pushRes.ok) {
+            const errText = await pushRes.text();
+            throw new Error(`HTTP ${pushRes.status}: ${errText}`);
+          }
           addLog('Abonnement enregistré sur le serveur ntfy');
 
           setIsSubscribed(true);
@@ -133,7 +132,6 @@
         setLoading(false);
       }
 
-      // Désabonnement pour réinitialiser
       async function handleUnsubscribe() {
         setLoading(true);
         addLog('=== DÉSABONNEMENT ===');
@@ -154,7 +152,6 @@
         setLoading(false);
       }
 
-      // TEST LOCAL (sans ntfy)
       async function handleLocalTest() {
         setLoading(true);
         addLog('=== TEST LOCAL ===');
@@ -175,26 +172,33 @@
         setLoading(false);
       }
 
-      // Envoi via ntfy avec délai
       async function handleTriggerNotification() {
         setLoading(true);
         addLog('=== ENVOI VIA NTFY ===');
         try {
           const payload = { title, message, click: window.location.href };
-          const delaySeconds = parseInt(delay, 10) || 0;
+          const headers = { 'Content-Type': 'application/json' };
+          if (useDelay && parseInt(delay, 10) > 0) {
+            headers['X-Delay'] = `${parseInt(delay, 10)}s`;
+            addLog(`Délai activé : ${delay}s`);
+          } else {
+            addLog('Délai désactivé');
+          }
 
-          addLog(`POST sur ntfy.sh/${TOPIC} avec délai=${delaySeconds}s`);
+          addLog(`POST sur ntfy.sh/${TOPIC}`);
           const res = await fetch(`https://ntfy.sh/${TOPIC}`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Delay': `${delaySeconds}s`
-            },
+            headers: headers,
             body: JSON.stringify(payload)
           });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          addLog(`Notification programmée dans ${delaySeconds} secondes`);
-          setStatus(`Signal envoyé (délai ${delaySeconds}s)`);
+
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`HTTP ${res.status} - ${errText}`);
+          }
+
+          addLog('Notification envoyée avec succès');
+          setStatus('Signal envoyé !');
         } catch (err) {
           setStatus('Erreur envoi : ' + err.message);
           addLog('Erreur: ' + err.message, true);
@@ -236,17 +240,29 @@
                 disabled={!isSubscribed}
               />
             </div>
-            <div>
-              <label className="text-xs text-[#718096] block mb-1">Délai (secondes)</label>
-              <input
-                type="number"
-                value={delay}
-                onChange={(e) => setDelay(e.target.value)}
-                className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]"
-                placeholder="30"
-                min="0"
-                disabled={!isSubscribed}
-              />
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <label className="text-xs text-[#718096] block mb-1">Délai (secondes)</label>
+                <input
+                  type="number"
+                  value={delay}
+                  onChange={(e) => setDelay(e.target.value)}
+                  className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]"
+                  placeholder="5"
+                  min="0"
+                  disabled={!isSubscribed || !useDelay}
+                />
+              </div>
+              <div className="flex items-center mt-2">
+                <input
+                  type="checkbox"
+                  checked={useDelay}
+                  onChange={(e) => setUseDelay(e.target.checked)}
+                  className="mr-2"
+                  disabled={!isSubscribed}
+                />
+                <label className="text-xs text-[#718096]">Activer délai</label>
+              </div>
             </div>
           </div>
 
@@ -258,7 +274,7 @@
             ) : (
               <>
                 <button onClick={handleTriggerNotification} disabled={loading} className="w-full py-4 rounded-xl font-semibold bg-[#222a30] text-[#00f2fe] border border-[#2b353d] transition-transform active:scale-95">
-                  {loading ? 'Envoi...' : `🚀 Envoyer (délai ${delay}s)`}
+                  {loading ? 'Envoi...' : `🚀 Envoyer ${useDelay ? `(délai ${delay}s)` : '(instantané)'}`}
                 </button>
                 <button onClick={handleLocalTest} disabled={loading} className="w-full py-4 rounded-xl font-semibold bg-[#1a2a2f] text-[#81e6d9] border border-[#2b4a4d] transition-transform active:scale-95">
                   {loading ? 'Test...' : '🧪 Test local (notification immédiate)'}
