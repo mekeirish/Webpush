@@ -8,19 +8,6 @@
 
   <!-- OneSignal SDK -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <script>
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(async function(OneSignal) {
-      await OneSignal.init({
-        appId: "893ad5cf-804c-4e1c-a564-b5f3afbe3c75",
-        allowLocalhostAsSecureOrigin: true,
-      });
-      window.OneSignalInitialized = true;
-      if (window.updateOneSignalStatus) {
-        window.updateOneSignalStatus();
-      }
-    });
-  </script>
 
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
@@ -29,24 +16,19 @@
 </head>
 <body class="bg-[#12161a] text-[#e2e8f0] font-sans antialiased flex items-center justify-center min-h-screen p-4 select-none">
 
-<div id="root" class="w-full max-w-2xl"></div>
+<div id="root" class="w-full max-w-md"></div>
 
 <script type="text/babel">
-  const TOPIC = 'lb1747';
   const ONE_SIGNAL_APP_ID = '893ad5cf-804c-4e1c-a564-b5f3afbe3c75';
-  const ONE_SIGNAL_REST_API_KEY = 'os_v2_app_re5nlt4ajrhbzjlewxz27pr4ov2lv3ijnpzejc5q4nappjyycboqgnhk3udsmmzmzzxodkbvdaf6grnvrgf4b7o7qhm73to6je2uwja'; // <-- REMPLACEZ ICI
+  const ONE_SIGNAL_REST_API_KEY = 'os_v2_app_re5nlt4ajrhbzjlewxz27pr4ov2lv3ijnpzejc5q4nappjyycboqgnhk3udsmmzmzzxodkbvdaf6grnvrgf4b7o7qhm73to6je2uwja';
 
   function App() {
     const [status, setStatus] = React.useState('Initialisation...');
     const [isSubscribed, setIsSubscribed] = React.useState(false);
     const [loading, setLoading] = React.useState(false);
     const [logs, setLogs] = React.useState([]);
-    const [isOneSignalSubscribed, setIsOneSignalSubscribed] = React.useState(false);
-    const [osLoading, setOsLoading] = React.useState(false);
-    const [title, setTitle] = React.useState('Notification LB');
+    const [title, setTitle] = React.useState('Notification OneSignal');
     const [message, setMessage] = React.useState('Bonsoir');
-    const [delay, setDelay] = React.useState('5');
-    const [useDelay, setUseDelay] = React.useState(false);
 
     const addLog = (msg, isError = false) => {
       const time = new Date().toLocaleTimeString();
@@ -61,170 +43,61 @@
       );
     };
 
+    // ----- useEffect : initialisation OneSignal -----
     React.useEffect(() => {
-      window.updateOneSignalStatus = checkOneSignalStatus;
       addLog('Application démarrée');
-      checkSubscription();
-      setTimeout(checkOneSignalStatus, 2000);
+      checkOneSignalStatus();
+
+      if (window.OneSignalDeferred) {
+        window.OneSignalDeferred.push(async function(OneSignal) {
+          addLog('OneSignal : Initialisation lancée...');
+          try {
+            await OneSignal.init({
+              appId: ONE_SIGNAL_APP_ID,
+              allowLocalhostAsSecureOrigin: true,
+            });
+            window.OneSignalInitialized = true;
+            addLog('OneSignal : Initialisé avec succès ✓');
+            await checkOneSignalStatus();
+          } catch (err) {
+            addLog('ÉCHEC Initialisation OneSignal : ' + err.message, true);
+          }
+        });
+      } else {
+        addLog('OneSignalDeferred non disponible', true);
+      }
     }, []);
 
-    async function checkSubscription() {
-      addLog('Vérification du support Web Push...');
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        setStatus('Web Push non supporté.');
-        addLog('Non supporté', true);
-        return;
-      }
-      try {
-        addLog('Enregistrement du Service Worker ntfy...');
-        const reg = await navigator.serviceWorker.register('./sw.js');
-        await navigator.serviceWorker.ready;
-        addLog('Service Worker ntfy prêt');
-        const sub = await reg.pushManager.getSubscription();
-        const subscribed = !!sub;
-        setIsSubscribed(subscribed);
-        setStatus(subscribed ? 'Abonné ntfy.' : 'Prêt ntfy.');
-        addLog(subscribed ? 'Abonnement ntfy actif' : 'Aucun abonnement ntfy');
-        if (subscribed) {
-          addLog('Endpoint: ' + sub.endpoint.substring(0, 60) + '…');
-        }
-      } catch (err) {
-        setStatus('Erreur: ' + err.message);
-        addLog('Erreur checkSubscription: ' + err.message, true);
-      }
-    }
-
+    // ----- Vérification OneSignal -----
     async function checkOneSignalStatus() {
       try {
         if (window.OneSignal && window.OneSignalInitialized) {
           const isSubscribed = await window.OneSignal.User.PushSubscription.optedIn;
-          setIsOneSignalSubscribed(isSubscribed);
+          setIsSubscribed(isSubscribed);
+          setStatus(isSubscribed ? 'Abonné OneSignal' : 'Non abonné');
           addLog(`OneSignal: ${isSubscribed ? 'abonné' : 'non abonné'}`);
         } else {
-          addLog('OneSignal SDK non chargé', true);
+          addLog('OneSignal SDK non chargé ou non initialisé', true);
         }
       } catch (err) {
         addLog('Erreur check OneSignal: ' + err.message, true);
       }
     }
 
-    // --- NTFY ---
+    // ----- Abonnement OneSignal -----
     async function handleSubscribe() {
-      setLoading(true);
-      addLog('=== NTFY : ABONNEMENT ===');
-      setStatus('Demande de permission...');
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') throw new Error('Permission refusée');
-        addLog('Permission accordée');
-        const reg = await navigator.serviceWorker.ready;
-        addLog('Service Worker ready');
-        setStatus('Récupération de la clé VAPID ntfy...');
-        const configRes = await fetch('https://ntfy.sh/v1/config');
-        if (!configRes.ok) throw new Error(`HTTP ${configRes.status}`);
-        const config = await configRes.json();
-        const publicKey = config.web_push_public_key || config.webPushPublicKey;
-        if (!publicKey) throw new Error('Clé VAPID introuvable');
-        addLog('Clé VAPID récupérée');
-        const padding = '='.repeat((4 - publicKey.length % 4) % 4);
-        const base64 = (publicKey + padding).replace(/\-/g, '+').replace(/_/g, '/');
-        const rawData = window.atob(base64);
-        const outputArray = new Uint8Array(rawData.length);
-        for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-        addLog('Clé convertie');
-        setStatus('Génération du token natif...');
-        const subscription = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: outputArray
-        });
-        addLog('Abonnement créé');
-        setStatus('Liaison avec le serveur ntfy...');
-        const pushRes = await fetch(`https://ntfy.sh/${TOPIC}/webpush`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(subscription)
-        });
-        if (!pushRes.ok) {
-          const errText = await pushRes.text();
-          throw new Error(`HTTP ${pushRes.status}: ${errText}`);
-        }
-        addLog('Abonnement enregistré sur ntfy');
-        setIsSubscribed(true);
-        setStatus('ntfy activé !');
-        addLog('=== NTFY ABONNEMENT RÉUSSI ===');
-      } catch (err) {
-        const msg = 'Échec : ' + err.message;
-        addLog(msg, true);
-        setStatus(msg);
-      }
-      setLoading(false);
-    }
-
-    async function handleUnsubscribe() {
-      setLoading(true);
-      addLog('=== NTFY : DÉSABONNEMENT ===');
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.getSubscription();
-        if (sub) {
-          await sub.unsubscribe();
-          addLog('Désabonné ntfy');
-          setIsSubscribed(false);
-          setStatus('Désabonné ntfy');
-        } else {
-          addLog('Aucun abonnement ntfy');
-        }
-      } catch (err) {
-        addLog('Erreur désabonnement: ' + err.message, true);
-      }
-      setLoading(false);
-    }
-
-    async function handleTriggerNotification() {
-      setLoading(true);
-      addLog('=== NTFY : ENVOI ===');
-      try {
-        const payload = { title, message, click: window.location.href };
-        const headers = { 'Content-Type': 'application/json' };
-        if (useDelay && parseInt(delay, 10) > 0) {
-          headers['X-Delay'] = `${parseInt(delay, 10)}s`;
-          addLog(`Délai ntfy : ${delay}s`);
-        } else {
-          addLog('Délai ntfy désactivé');
-        }
-        addLog(`POST sur ntfy.sh/${TOPIC}`);
-        const res = await fetch(`https://ntfy.sh/${TOPIC}`, {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify(payload)
-        });
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`HTTP ${res.status} - ${errText}`);
-        }
-        addLog('Notification ntfy envoyée');
-        setStatus('ntfy envoyé !');
-      } catch (err) {
-        setStatus('Erreur ntfy : ' + err.message);
-        addLog('Erreur: ' + err.message, true);
-      }
-      setLoading(false);
-    }
-
-    // --- ONESIGNAL (CORRIGÉ) ---
-    async function handleOneSignalSubscribe() {
-      if (!window.OneSignal) {
-        addLog('SDK OneSignal non chargé', true);
+      if (!window.OneSignal || !window.OneSignalInitialized) {
+        addLog('SDK OneSignal non initialisé', true);
         return;
       }
-      setOsLoading(true);
+      setLoading(true);
       addLog('=== ONESIGNAL : ABONNEMENT ===');
       try {
         addLog('Demande de permission native...');
         await window.OneSignal.Notifications.requestPermission();
         await window.OneSignal.User.PushSubscription.optIn();
         const isSubscribed = window.OneSignal.User.PushSubscription.optedIn;
-        setIsOneSignalSubscribed(isSubscribed);
+        setIsSubscribed(isSubscribed);
         if (isSubscribed) {
           addLog('Abonné OneSignal avec succès !');
           setStatus('OneSignal abonné');
@@ -236,60 +109,66 @@
         addLog('Erreur OneSignal: ' + err.message, true);
         setStatus('Erreur OneSignal');
       } finally {
-        setOsLoading(false);
+        setLoading(false);
       }
     }
 
-    async function handleOneSignalUnsubscribe() {
-      if (!window.OneSignal) return;
-      setOsLoading(true);
+    // ----- Désabonnement -----
+    async function handleUnsubscribe() {
+      if (!window.OneSignal || !window.OneSignalInitialized) return;
+      setLoading(true);
       addLog('=== ONESIGNAL : DÉSABONNEMENT ===');
       try {
         await window.OneSignal.User.PushSubscription.optOut();
-        setIsOneSignalSubscribed(false);
+        setIsSubscribed(false);
+        setStatus('Désabonné');
         addLog('Désabonné OneSignal');
-        setStatus('OneSignal désabonné');
       } catch (err) {
         addLog('Erreur désabonnement: ' + err.message, true);
       } finally {
-        setOsLoading(false);
+        setLoading(false);
       }
     }
 
-    async function handleOneSignalSend() {
-      setOsLoading(true);
+    // ----- Envoi via API REST -----
+    async function handleSend() {
+      if (!isSubscribed) {
+        addLog('Vous devez être abonné pour envoyer.', true);
+        return;
+      }
+      setLoading(true);
       addLog('=== ONESIGNAL : ENVOI API ===');
       try {
         const response = await fetch('https://onesignal.com/api/v1/notifications', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Basic ${ONE_SIGNAL_REST_API_KEY}`
+            'Authorization': 'Basic ' + ONE_SIGNAL_REST_API_KEY
           },
           body: JSON.stringify({
             app_id: ONE_SIGNAL_APP_ID,
             contents: { en: message || 'Bonsoir' },
-            headings: { en: title || 'Notification LB' },
+            headings: { en: title || 'Notification OneSignal' },
             included_segments: ['All'],
             url: window.location.href
           })
         });
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`HTTP ${response.status} - ${errText}`);
+          throw new Error('HTTP ' + response.status + ' - ' + errText);
         }
         const data = await response.json();
-        addLog(`Notification OneSignal envoyée (id: ${data.id})`);
-        setStatus('OneSignal envoyé !');
+        addLog('Notification envoyée (id: ' + data.id + ')');
+        setStatus('Envoyé !');
       } catch (err) {
-        setStatus('Erreur OneSignal: ' + err.message);
+        setStatus('Erreur envoi');
         addLog('Erreur: ' + err.message, true);
       } finally {
-        setOsLoading(false);
+        setLoading(false);
       }
     }
 
-    // --- TEST LOCAL (CORRIGÉ) ---
+    // ----- Test local (via le Service Worker) -----
     async function handleLocalTest() {
       setLoading(true);
       addLog('=== TEST LOCAL ===');
@@ -321,12 +200,12 @@
       }
     }
 
+    // ----- RENDU -----
     return (
       <div className="bg-[#1b2126] rounded-3xl p-6 border border-[#242c33] shadow-xl">
         <div className="text-center mb-6">
-          <h1 className="text-xl font-bold text-[#00f2fe]">LB PUSH PROTOCOL</h1>
-          <p className="text-xs text-[#718096] mt-1">Topic ntfy : {TOPIC}</p>
-          <p className="text-xs text-[#718096]">OneSignal App ID : {ONE_SIGNAL_APP_ID.slice(0, 8)}…</p>
+          <h1 className="text-xl font-bold text-[#00f2fe]">LB PUSH TESTER</h1>
+          <p className="text-xs text-[#718096] mt-1">OneSignal</p>
         </div>
 
         <div className="bg-[#15191d] rounded-2xl p-4 mb-6 text-sm text-center font-mono text-[#94a3b8] border border-[#101417]">
@@ -342,72 +221,28 @@
             <label className="text-xs text-[#718096] block mb-1">Message</label>
             <input type="text" value={message} onChange={(e) => setMessage(e.target.value)} className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]" />
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <label className="text-xs text-[#718096] block mb-1">Délai ntfy (secondes)</label>
-              <input type="number" value={delay} onChange={(e) => setDelay(e.target.value)} className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]" min="0" />
-            </div>
-            <div className="flex items-center mt-2">
-              <input type="checkbox" checked={useDelay} onChange={(e) => setUseDelay(e.target.checked)} className="mr-2" />
-              <label className="text-xs text-[#718096]">Activer délai</label>
-            </div>
-          </div>
         </div>
 
-        {/* NTFY */}
-        <div className="border border-[#2b353d] rounded-xl p-4 mb-6">
-          <h2 className="text-sm font-semibold text-[#00f2fe] mb-3">📡 NTFY</h2>
-          <div className="flex flex-col gap-3">
-            {!isSubscribed ? (
-              <button onClick={handleSubscribe} disabled={loading} className="w-full py-3 rounded-xl font-semibold bg-gradient-to-r from-[#00c6ff] to-[#00f2fe] text-[#0f172a] transition-transform active:scale-95">
-                {loading ? 'Chargement...' : 'S\'abonner ntfy'}
-              </button>
-            ) : (
-              <>
-                <button onClick={handleTriggerNotification} disabled={loading} className="w-full py-3 rounded-xl font-semibold bg-[#222a30] text-[#00f2fe] border border-[#2b353d] transition-transform active:scale-95">
-                  {loading ? 'Envoi...' : `🚀 Envoyer ntfy ${useDelay ? `(délai ${delay}s)` : '(instantané)'}`}
-                </button>
-                <button onClick={handleUnsubscribe} disabled={loading} className="w-full py-3 rounded-xl font-semibold bg-[#2a1a1a] text-[#fc8181] border border-[#4a2b2b] transition-transform active:scale-95">
-                  Se désabonner ntfy
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* ONESIGNAL */}
-        <div className="border border-[#4a2b4a] rounded-xl p-4 mb-6">
-          <h2 className="text-sm font-semibold text-[#d6b3ff] mb-3">📱 ONESIGNAL</h2>
-          <div className="flex flex-col gap-3">
-            {!isOneSignalSubscribed ? (
-              <button onClick={handleOneSignalSubscribe} disabled={osLoading} className="w-full py-3 rounded-xl font-semibold bg-[#3a2a3a] text-[#d6b3ff] border border-[#4a2b4a] transition-transform active:scale-95">
-                {osLoading ? 'Chargement...' : 'S\'abonner OneSignal'}
-              </button>
-            ) : (
-              <>
-                <button onClick={handleOneSignalSend} disabled={osLoading} className="w-full py-3 rounded-xl font-semibold bg-[#3a2a3a] text-[#d6b3ff] border border-[#4a2b4a] transition-transform active:scale-95">
-                  {osLoading ? 'Envoi...' : '📤 Envoyer OneSignal (API)'}
-                </button>
-                <button onClick={handleOneSignalUnsubscribe} disabled={osLoading} className="w-full py-3 rounded-xl font-semibold bg-[#2a1a2a] text-[#fc8181] border border-[#4a2b2b] transition-transform active:scale-95">
-                  Se désabonner OneSignal
-                </button>
-              </>
-            )}
-            <button onClick={checkOneSignalStatus} className="w-full py-2 rounded-xl font-semibold bg-[#15191d] text-[#718096] border border-[#242c33] text-xs">
-              🔍 Vérifier statut OneSignal
+        <div className="flex flex-col gap-3 mb-6">
+          {!isSubscribed ? (
+            <button onClick={handleSubscribe} disabled={loading} className="w-full py-3 rounded-xl font-semibold bg-gradient-to-r from-[#00c6ff] to-[#00f2fe] text-[#0f172a] transition-transform active:scale-95">
+              {loading ? 'Chargement...' : "S'abonner OneSignal"}
             </button>
-          </div>
-        </div>
-
-        {/* Test local */}
-        <div className="border border-[#2b4a4d] rounded-xl p-4 mb-6">
-          <h2 className="text-sm font-semibold text-[#81e6d9] mb-3">🧪 TEST LOCAL (SW)</h2>
+          ) : (
+            <>
+              <button onClick={handleSend} disabled={loading} className="w-full py-3 rounded-xl font-semibold bg-[#222a30] text-[#00f2fe] border border-[#2b353d] transition-transform active:scale-95">
+                {loading ? 'Envoi...' : '📤 Envoyer la notification'}
+              </button>
+              <button onClick={handleUnsubscribe} disabled={loading} className="w-full py-3 rounded-xl font-semibold bg-[#2a1a1a] text-[#fc8181] border border-[#4a2b2b] transition-transform active:scale-95">
+                Se désabonner
+              </button>
+            </>
+          )}
           <button onClick={handleLocalTest} disabled={loading} className="w-full py-3 rounded-xl font-semibold bg-[#1a2a2f] text-[#81e6d9] border border-[#2b4a4d] transition-transform active:scale-95">
-            {loading ? 'Test...' : 'Afficher notification instantanée'}
+            {loading ? 'Test...' : '🧪 Test local (SW)'}
           </button>
         </div>
 
-        {/* Console */}
         <div className="mt-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-[#718096] uppercase tracking-wider">Console de débogage</span>
