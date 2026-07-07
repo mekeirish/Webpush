@@ -121,13 +121,15 @@
         setLoading(false);
       }
 
-      // === TEST LOCAL : envoi d'un message au SW pour afficher une notification immédiate ===
+      // TEST LOCAL : envoi d'un message au Service Worker
       async function handleLocalTest() {
         setLoading(true);
         addLog('=== TEST LOCAL ===');
         try {
           const reg = await navigator.serviceWorker.ready;
-          // Envoyer un message au Service Worker
+          if (!reg.active) {
+            throw new Error('Service Worker non actif');
+          }
           reg.active.postMessage({
             type: 'TEST',
             title: title || 'Test local',
@@ -144,12 +146,12 @@
 
       async function handleTriggerNotification() {
         setLoading(true);
-        addLog('=== ENVOI D’UNE NOTIFICATION ===');
+        addLog('=== ENVOI VIA NTFY ===');
         try {
           const payload = { title, message, click: window.location.href };
           const delaySeconds = parseInt(delay, 10) || 0;
 
-          addLog(`POST sur ntfy.sh/${TOPIC} avec délai=${delaySeconds}s, title="${title}", message="${message}"`);
+          addLog(`POST sur ntfy.sh/${TOPIC} avec délai=${delaySeconds}s`);
           const res = await fetch(`https://ntfy.sh/${TOPIC}`, {
             method: 'POST',
             headers: {
@@ -226,7 +228,6 @@
                 <button onClick={handleTriggerNotification} disabled={loading} className="w-full py-4 rounded-xl font-semibold bg-[#222a30] text-[#00f2fe] border border-[#2b353d] transition-transform active:scale-95">
                   {loading ? 'Envoi...' : `🚀 Envoyer (délai ${delay}s)`}
                 </button>
-                {/* Bouton de test local */}
                 <button onClick={handleLocalTest} disabled={loading} className="w-full py-4 rounded-xl font-semibold bg-[#1a2a2f] text-[#81e6d9] border border-[#2b4a4d] transition-transform active:scale-95">
                   {loading ? 'Test...' : '🧪 Test local (notification immédiate)'}
                 </button>
