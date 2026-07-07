@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LB Push Tester</title>
+  <!-- React & Babel CDN avec crossorigin pour des logs d'erreurs clairs -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Manifeste minimal PWA -->
+  <link rel="manifest" href="data:application/json,{%22name%22:%22LBPush%22,%22short_name%22:%22LBPush%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22}">
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4b6cb7">
+<link rel="apple-touch-icon" href="icon.png"></head>
+<body class="bg-[#12161a] text-[#e2e8f0] font-sans antialiased flex items-center justify-center min-h-screen p-4 select-none">
+
+  <div id="root" class="w-full max-w-md"></div>
+
+  <script type="text/babel">
+    const TOPIC = 'lb1747';
+
+    function App() {
+      const [status, setStatus] = React.useState('Initialisation...');
+      const [isSubscribed, setIsSubscribed] = React.useState(false);
+      const [loading, setLoading] = React.useState(false);
+
+      React.useEffect(() => {
+        checkSubscription();
+      }, []);
+
+      async function checkSubscription() {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+          setStatus('Web Push non supporté sur ce navigateur.');
+          return;
+        }
+
+        try {
+          const reg = await navigator.serviceWorker.register('./sw.js');
+          await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.getSubscription();
+          
+          if (sub) {
+            setIsSubscribed(true);
+            setStatus('Abonné au flux de push.');
+          } else {
+            setStatus('Prêt à l\'activation.');
+          }
+        } catch (err) {
+          setStatus('Erreur de configuration : ' + err.message);
+        }
+      }
+
+      async function handleSubscribe() {
+        setLoading(true);
+        setStatus('Demande de permission...');
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') {
+            setStatus('Permission de notification refusée.');
+            setLoading(false);
+            return;
+          }
+
+          const reg = await navigator.serviceWorker.ready;
+          
+          setStatus('Récupération de la clé VAPID ntfy...');
+          const configRes = await fetch('https://ntfy.sh/v1/config');
+          const config = await configRes.json();
+          const publicKey = config.webPushPublicKey;
+
+          const padding = '='.repeat((4 - publicKey.length % 4) % 4);
+          const base64 = (publicKey + padding).replace(/\-/g, '+').replace(/_/g, '/');
+          const rawData = window.atob(base64);
+          const outputArray = new Uint8Array(rawData.length);
+          for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+          }
+
+          setStatus('Génération du token natif...');
+          const subscription = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: outputArray
+          });
+
+          setStatus('Liaison avec le serveur ntfy...');
+          await fetch(`https://ntfy.sh/${TOPIC}/webpush`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(subscription)
+          });
+
+          setIsSubscribed(true);
+          setStatus('Notification Push activée à 100% !');
+        } catch (err) {
+          setStatus('Échec de l\'activation : ' + err.message);
+        }
+        setLoading(false);
+      }
+
+      async function handleTriggerNotification() {
+        setLoading(true);
+        try {
+          await fetch(`https://ntfy.sh/${TOPIC}`, {
+            method: 'POST',
+            headers: {
+              'Title': 'Test Système - Kool',
+              'Priority': 'high',
+              'Click': window.location.href
+            },
+            body: 'Le signal Web Push VAPID fonctionne en tâche de fond !'
+          });
+          setStatus('Signal envoyé à ntfy !');
+        } catch (err) {
+          setStatus('Erreur d\'envoi : ' + err.message);
+        }
+        setLoading(false);
+      }
+
+      return (
+        <div className="bg-[#1b2126] rounded-3xl p-6 border border-[#242c33] shadow-[8px_8px_16px_#0d1013,-4px,-4px,12px_#29323a]">
+          <div className="text-center mb-8">
+            <h1 className="text-xl font-bold tracking-wide text-[#00f2fe] drop-shadow-[0_0_8px_rgba(0,242,254,0.3)]">LB PUSH PROTOCOL</h1>
+            <p className="text-xs text-[#718096] mt-1">Topic actif : <span className="text-[#cbd5e1] font-mono">{TOPIC}</span></p>
+          </div>
+
+          {/* Écran de statut Neumorphique creux réajusté */}
+          <div className="bg-[#15191d] rounded-2xl p-4 mb-8 text-sm border border-[#101417] text-center min-h-[50px] flex items-center justify-center font-mono text-[#94a3b8]">
+            {status}
+          </div>
+
+          <div className="flex flex-col gap-4">
+            {!isSubscribed ? (
+              <button 
+                onClick={handleSubscribe}
+                disabled={loading}
+                className="w-full py-4 rounded-xl font-semibold uppercase tracking-wider text-sm transition-all bg-gradient-to-r from-[#00c6ff] to-[#00f2fe] text-[#0f172a] shadow-[0_4px_20px_rgba(0,242,254,0.4)] active:scale-[0.98] disabled:opacity-50"
+              >
+                {loading ? 'Configuration...' : 'Autoriser & S\'abonner'}
+              </button>
+            ) : (
+              <button 
+                onClick={handleTriggerNotification}
+                disabled={loading}
+                className="w-full py-4 rounded-xl font-semibold uppercase tracking-wider text-sm transition-all bg-[#222a30] text-[#00f2fe] border border-[#2b353d] shadow-[4px_4px_10px_#0d1013] active:scale-[0.98] disabled:opacity-50"
+              >
+                {loading ? 'Envoi...' : '🚀 Envoyer la Notification'}
+              </button>
+            )}
+          </div>
+          
+          <div className="mt-8 text-center text-[10px] text-[#4a5568] tracking-widest uppercase">
+            Smartphone-First • Web Push VAPID
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js'));}</script>
+</body>
+</html>
