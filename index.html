@@ -11,7 +11,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-[#12161a] text-[#e2e8f0] font-sans antialiased flex items-center justify-center min-h-screen p-4 select-none">
+
   <div id="root" class="w-full max-w-md"></div>
+
   <script type="text/babel">
     const TOPIC = 'lb1747';
 
@@ -119,6 +121,27 @@
         setLoading(false);
       }
 
+      // === TEST LOCAL : envoi d'un message au SW pour afficher une notification immédiate ===
+      async function handleLocalTest() {
+        setLoading(true);
+        addLog('=== TEST LOCAL ===');
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          // Envoyer un message au Service Worker
+          reg.active.postMessage({
+            type: 'TEST',
+            title: title || 'Test local',
+            message: message || 'Notification instantanée'
+          });
+          addLog('Message envoyé au Service Worker');
+          setStatus('Test local envoyé (notification attendue)');
+        } catch (err) {
+          addLog('Erreur test local: ' + err.message, true);
+          setStatus('Erreur test local');
+        }
+        setLoading(false);
+      }
+
       async function handleTriggerNotification() {
         setLoading(true);
         addLog('=== ENVOI D’UNE NOTIFICATION ===');
@@ -199,9 +222,15 @@
                 {loading ? 'Configuration...' : 'Autoriser & S\'abonner'}
               </button>
             ) : (
-              <button onClick={handleTriggerNotification} disabled={loading} className="w-full py-4 rounded-xl font-semibold bg-[#222a30] text-[#00f2fe] border border-[#2b353d] transition-transform active:scale-95">
-                {loading ? 'Envoi...' : `🚀 Envoyer (délai ${delay}s)`}
-              </button>
+              <>
+                <button onClick={handleTriggerNotification} disabled={loading} className="w-full py-4 rounded-xl font-semibold bg-[#222a30] text-[#00f2fe] border border-[#2b353d] transition-transform active:scale-95">
+                  {loading ? 'Envoi...' : `🚀 Envoyer (délai ${delay}s)`}
+                </button>
+                {/* Bouton de test local */}
+                <button onClick={handleLocalTest} disabled={loading} className="w-full py-4 rounded-xl font-semibold bg-[#1a2a2f] text-[#81e6d9] border border-[#2b4a4d] transition-transform active:scale-95">
+                  {loading ? 'Test...' : '🧪 Test local (notification immédiate)'}
+                </button>
+              </>
             )}
           </div>
 
