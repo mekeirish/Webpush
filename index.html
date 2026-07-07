@@ -22,22 +22,20 @@
       const [isSubscribed, setIsSubscribed] = React.useState(false);
       const [loading, setLoading] = React.useState(false);
       const [logs, setLogs] = React.useState([]);
+      const [title, setTitle] = React.useState('Notification LB');
+      const [message, setMessage] = React.useState('Bonsoir');
 
-      // Ajoute une ligne de log avec timestamp
-      const addLog = (message, isError = false) => {
-        const timestamp = new Date().toLocaleTimeString();
-        setLogs(prev => [...prev, { time: timestamp, msg: message, error: isError }]);
+      const addLog = (msg, isError = false) => {
+        const time = new Date().toLocaleTimeString();
+        setLogs(prev => [...prev, { time, msg, error: isError }]);
       };
 
-      // Vide les logs (pour repartir de zéro)
       const clearLogs = () => setLogs([]);
-
-      // Copie les logs formatés dans le presse-papiers
       const copyLogs = () => {
         const text = logs.map(l => `[${l.time}] ${l.msg}`).join('\n');
         navigator.clipboard.writeText(text).then(
           () => alert('Rapport copié !'),
-          () => alert('Impossible de copier, veuillez copier manuellement.')
+          () => alert('Impossible de copier.')
         );
       };
 
@@ -49,28 +47,23 @@
       async function checkSubscription() {
         addLog('Vérification du support Web Push...');
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-          const msg = 'Web Push non supporté par ce navigateur.';
-          addLog(msg, true);
-          setStatus(msg);
+          setStatus('Web Push non supporté.');
+          addLog('Non supporté', true);
           return;
         }
-
         try {
           addLog('Enregistrement du Service Worker...');
           const reg = await navigator.serviceWorker.register('./sw.js');
           await navigator.serviceWorker.ready;
           addLog('Service Worker prêt');
-
-          addLog('Récupération de l’abonnement existant...');
           const sub = await reg.pushManager.getSubscription();
           const subscribed = !!sub;
           setIsSubscribed(subscribed);
           setStatus(subscribed ? 'Abonné au flux.' : 'Prêt à l\'activation.');
           addLog(subscribed ? 'Abonnement actif' : 'Aucun abonnement');
         } catch (err) {
-          const msg = 'Erreur checkSubscription : ' + err.message;
-          addLog(msg, true);
-          setStatus(msg);
+          setStatus('Erreur: ' + err.message);
+          addLog('Erreur checkSubscription: ' + err.message, true);
         }
       }
 
@@ -78,65 +71,51 @@
         setLoading(true);
         addLog('=== DÉBUT ABONNEMENT ===');
         setStatus('Demande de permission...');
-
         try {
-          addLog('Demande de permission Notification...');
           const permission = await Notification.requestPermission();
-          if (permission !== 'granted') {
-            throw new Error('Permission refusée par l’utilisateur');
-          }
+          if (permission !== 'granted') throw new Error('Permission refusée');
           addLog('Permission accordée');
 
           const reg = await navigator.serviceWorker.ready;
           addLog('Service Worker ready');
 
           setStatus('Récupération de la clé VAPID ntfy...');
-          addLog('Requête vers https://ntfy.sh/v1/config');
           const configRes = await fetch('https://ntfy.sh/v1/config');
-          if (!configRes.ok) throw new Error(`HTTP ${configRes.status} lors de la récupération de la config`);
+          if (!configRes.ok) throw new Error(`HTTP ${configRes.status}`);
           const config = await configRes.json();
-          addLog('Config reçue');
-
-          // Correction : ntfy utilise "web_push_public_key" (snake_case)
           const publicKey = config.web_push_public_key || config.webPushPublicKey;
-          if (!publicKey) {
-            throw new Error('Clé VAPID introuvable dans la réponse du serveur');
-          }
-          addLog('Clé VAPID récupérée (longueur: ' + publicKey.length + ')');
+          if (!publicKey) throw new Error('Clé VAPID introuvable');
+          addLog('Clé VAPID récupérée');
 
-          // Décodage base64 vers Uint8Array
           const padding = '='.repeat((4 - publicKey.length % 4) % 4);
           const base64 = (publicKey + padding).replace(/\-/g, '+').replace(/_/g, '/');
           const rawData = window.atob(base64);
           const outputArray = new Uint8Array(rawData.length);
           for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-          addLog('Clé convertie en Uint8Array');
+          addLog('Clé convertie');
 
           setStatus('Génération du token natif...');
-          addLog('Appel à pushManager.subscribe...');
           const subscription = await reg.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: outputArray
           });
-          addLog('Abonnement créé (endpoint: ' + subscription.endpoint.substring(0, 50) + '…)');
+          addLog('Abonnement créé');
 
           setStatus('Liaison avec le serveur ntfy...');
-          addLog('Envoi de l’abonnement à ntfy.sh/' + TOPIC + '/webpush');
           const pushRes = await fetch(`https://ntfy.sh/${TOPIC}/webpush`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(subscription)
           });
-          if (!pushRes.ok) throw new Error(`HTTP ${pushRes.status} lors de l’enregistrement sur ntfy`);
-          addLog('Abonnement enregistré sur le serveur ntfy');
+          if (!pushRes.ok) throw new Error(`HTTP ${pushRes.status}`);
+          addLog('Enregistrement sur ntfy réussi');
 
           setIsSubscribed(true);
           setStatus('Notification Push activée !');
           addLog('=== ABONNEMENT RÉUSSI ===');
         } catch (err) {
-          const msg = 'Échec : ' + err.message;
-          addLog(msg, true);
-          setStatus(msg);
+          setStatus('Échec : ' + err.message);
+          addLog('Erreur: ' + err.message, true);
         }
         setLoading(false);
       }
@@ -145,19 +124,25 @@
         setLoading(true);
         addLog('=== ENVOI D’UNE NOTIFICATION ===');
         try {
-          addLog(`POST sur https://ntfy.sh/${TOPIC} avec titre "Test Système"`);
+          // Envoi d’un JSON structuré pour que le service worker l’exploite
+          const payload = {
+            title: title || 'Notification LB',
+            message: message || 'Bonsoir',
+            click: window.location.href
+          };
+
+          addLog(`POST sur ntfy.sh/${TOPIC} avec title="${payload.title}", message="${payload.message}"`);
           const res = await fetch(`https://ntfy.sh/${TOPIC}`, {
             method: 'POST',
-            headers: { 'Title': 'Test Système', 'Priority': 'high', 'Click': window.location.href },
-            body: 'Le signal Web Push VAPID fonctionne en tâche de fond !'
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
           });
-          if (!res.ok) throw new Error(`HTTP ${res.status} lors de l’envoi`);
-          addLog('Message envoyé avec succès');
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          addLog('Notification envoyée avec succès');
           setStatus('Signal envoyé !');
         } catch (err) {
-          const msg = 'Erreur envoi : ' + err.message;
-          addLog(msg, true);
-          setStatus(msg);
+          setStatus('Erreur envoi : ' + err.message);
+          addLog('Erreur: ' + err.message, true);
         }
         setLoading(false);
       }
@@ -171,6 +156,32 @@
 
           <div className="bg-[#15191d] rounded-2xl p-4 mb-6 text-sm text-center font-mono text-[#94a3b8] border border-[#101417]">
             {status}
+          </div>
+
+          {/* Champs de saisie pour personnaliser la notification */}
+          <div className="space-y-3 mb-6">
+            <div>
+              <label className="text-xs text-[#718096] block mb-1">Titre</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]"
+                placeholder="Titre de la notification"
+                disabled={!isSubscribed}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-[#718096] block mb-1">Message</label>
+              <input
+                type="text"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]"
+                placeholder="Message de la notification"
+                disabled={!isSubscribed}
+              />
+            </div>
           </div>
 
           <div className="flex flex-col gap-4 mb-6">
