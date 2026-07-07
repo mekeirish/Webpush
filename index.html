@@ -6,7 +6,7 @@
   <title>LB Push Tester</title>
   <link rel="manifest" href="manifest.json">
 
-  <!-- OneSignal SDK (Typical Site) -->
+  <!-- OneSignal SDK -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -15,6 +15,10 @@
         appId: "893ad5cf-804c-4e1c-a564-b5f3afbe3c75",
         allowLocalhostAsSecureOrigin: true,
       });
+      window.OneSignalInitialized = true;
+      if (window.updateOneSignalStatus) {
+        window.updateOneSignalStatus();
+      }
     });
   </script>
 
@@ -30,20 +34,15 @@
 <script type="text/babel">
   const TOPIC = 'lb1747';
   const ONE_SIGNAL_APP_ID = '893ad5cf-804c-4e1c-a564-b5f3afbe3c75';
-  const ONE_SIGNAL_REST_API_KEY = 'os_v2_app_re5nlt4ajrhbzjlewxz27pr4ov2lv3ijnpzejc5q4nappjyycboqgnhk3udsmmzmzzxodkbvdaf6grnvrgf4b7o7qhm73to6je2uwja'; // À remplacer
+  const ONE_SIGNAL_REST_API_KEY = 'os_v2_app_re5nlt4ajrhbzjlewxz27pr4ov2lv3ijnpzejc5q4nappjyycboqgnhk3udsmmzmzzxodkbvdaf6grnvrgf4b7o7qhm73to6je2uwja'; // <-- REMPLACEZ ICI
 
   function App() {
-    // États ntfy
     const [status, setStatus] = React.useState('Initialisation...');
     const [isSubscribed, setIsSubscribed] = React.useState(false);
     const [loading, setLoading] = React.useState(false);
     const [logs, setLogs] = React.useState([]);
-
-    // États OneSignal
     const [isOneSignalSubscribed, setIsOneSignalSubscribed] = React.useState(false);
     const [osLoading, setOsLoading] = React.useState(false);
-
-    // Champs communs
     const [title, setTitle] = React.useState('Notification LB');
     const [message, setMessage] = React.useState('Bonsoir');
     const [delay, setDelay] = React.useState('5');
@@ -62,14 +61,13 @@
       );
     };
 
-    // ----- Initialisation -----
     React.useEffect(() => {
+      window.updateOneSignalStatus = checkOneSignalStatus;
       addLog('Application démarrée');
       checkSubscription();
-      checkOneSignalStatus();
+      setTimeout(checkOneSignalStatus, 2000);
     }, []);
 
-    // ----- Vérification ntfy -----
     async function checkSubscription() {
       addLog('Vérification du support Web Push...');
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -96,11 +94,9 @@
       }
     }
 
-    // ----- Vérification OneSignal (CORRIGÉE) -----
     async function checkOneSignalStatus() {
       try {
-        if (window.OneSignal) {
-          // Utilisation de la propriété .optedIn (booléen)
+        if (window.OneSignal && window.OneSignalInitialized) {
           const isSubscribed = await window.OneSignal.User.PushSubscription.optedIn;
           setIsOneSignalSubscribed(isSubscribed);
           addLog(`OneSignal: ${isSubscribed ? 'abonné' : 'non abonné'}`);
@@ -112,7 +108,7 @@
       }
     }
 
-    // ----- NTFY : Abonnement -----
+    // --- NTFY ---
     async function handleSubscribe() {
       setLoading(true);
       addLog('=== NTFY : ABONNEMENT ===');
@@ -121,33 +117,27 @@
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') throw new Error('Permission refusée');
         addLog('Permission accordée');
-
         const reg = await navigator.serviceWorker.ready;
         addLog('Service Worker ready');
-
         setStatus('Récupération de la clé VAPID ntfy...');
-        addLog('Requête vers https://ntfy.sh/v1/config');
         const configRes = await fetch('https://ntfy.sh/v1/config');
         if (!configRes.ok) throw new Error(`HTTP ${configRes.status}`);
         const config = await configRes.json();
         const publicKey = config.web_push_public_key || config.webPushPublicKey;
         if (!publicKey) throw new Error('Clé VAPID introuvable');
         addLog('Clé VAPID récupérée');
-
         const padding = '='.repeat((4 - publicKey.length % 4) % 4);
         const base64 = (publicKey + padding).replace(/\-/g, '+').replace(/_/g, '/');
         const rawData = window.atob(base64);
         const outputArray = new Uint8Array(rawData.length);
         for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
         addLog('Clé convertie');
-
         setStatus('Génération du token natif...');
         const subscription = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: outputArray
         });
         addLog('Abonnement créé');
-
         setStatus('Liaison avec le serveur ntfy...');
         const pushRes = await fetch(`https://ntfy.sh/${TOPIC}/webpush`, {
           method: 'POST',
@@ -159,7 +149,6 @@
           throw new Error(`HTTP ${pushRes.status}: ${errText}`);
         }
         addLog('Abonnement enregistré sur ntfy');
-
         setIsSubscribed(true);
         setStatus('ntfy activé !');
         addLog('=== NTFY ABONNEMENT RÉUSSI ===');
@@ -191,7 +180,6 @@
       setLoading(false);
     }
 
-    // ----- NTFY : Envoi -----
     async function handleTriggerNotification() {
       setLoading(true);
       addLog('=== NTFY : ENVOI ===');
@@ -204,7 +192,6 @@
         } else {
           addLog('Délai ntfy désactivé');
         }
-
         addLog(`POST sur ntfy.sh/${TOPIC}`);
         const res = await fetch(`https://ntfy.sh/${TOPIC}`, {
           method: 'POST',
@@ -224,39 +211,51 @@
       setLoading(false);
     }
 
-    // ----- ONESIGNAL : Abonnement -----
+    // --- ONESIGNAL (CORRIGÉ) ---
     async function handleOneSignalSubscribe() {
+      if (!window.OneSignal) {
+        addLog('SDK OneSignal non chargé', true);
+        return;
+      }
       setOsLoading(true);
       addLog('=== ONESIGNAL : ABONNEMENT ===');
       try {
-        if (!window.OneSignal) throw new Error('SDK OneSignal non chargé');
+        addLog('Demande de permission native...');
+        await window.OneSignal.Notifications.requestPermission();
         await window.OneSignal.User.PushSubscription.optIn();
-        setIsOneSignalSubscribed(true);
-        addLog('Abonné OneSignal');
-        setStatus('OneSignal abonné');
+        const isSubscribed = window.OneSignal.User.PushSubscription.optedIn;
+        setIsOneSignalSubscribed(isSubscribed);
+        if (isSubscribed) {
+          addLog('Abonné OneSignal avec succès !');
+          setStatus('OneSignal abonné');
+        } else {
+          addLog('Permission refusée ou bloquée', true);
+          setStatus('OneSignal non autorisé');
+        }
       } catch (err) {
         addLog('Erreur OneSignal: ' + err.message, true);
         setStatus('Erreur OneSignal');
+      } finally {
+        setOsLoading(false);
       }
-      setOsLoading(false);
     }
 
     async function handleOneSignalUnsubscribe() {
+      if (!window.OneSignal) return;
       setOsLoading(true);
       addLog('=== ONESIGNAL : DÉSABONNEMENT ===');
       try {
-        if (!window.OneSignal) throw new Error('SDK OneSignal non chargé');
         await window.OneSignal.User.PushSubscription.optOut();
         setIsOneSignalSubscribed(false);
         addLog('Désabonné OneSignal');
         setStatus('OneSignal désabonné');
       } catch (err) {
-        addLog('Erreur désabonnement OneSignal: ' + err.message, true);
+        addLog('Erreur désabonnement: ' + err.message, true);
+      } finally {
+        setOsLoading(false);
       }
-      setOsLoading(false);
     }
 
-    // ----- ONESIGNAL : Envoi via API REST -----
     async function handleOneSignalSend() {
       setOsLoading(true);
       addLog('=== ONESIGNAL : ENVOI API ===');
@@ -285,14 +284,15 @@
       } catch (err) {
         setStatus('Erreur OneSignal: ' + err.message);
         addLog('Erreur: ' + err.message, true);
+      } finally {
+        setOsLoading(false);
       }
-      setOsLoading(false);
     }
 
-    // ----- TEST LOCAL (via ntfy SW) -----
+    // --- TEST LOCAL (CORRIGÉ) ---
     async function handleLocalTest() {
       setLoading(true);
-      addLog('=== TEST LOCAL (ntfy SW) ===');
+      addLog('=== TEST LOCAL ===');
       try {
         const reg = await navigator.serviceWorker.ready;
         if (!reg.active) throw new Error('Service Worker non actif');
@@ -306,11 +306,21 @@
       } catch (err) {
         addLog('Erreur test local: ' + err.message, true);
         setStatus('Erreur test local');
+        try {
+          if (Notification.permission === 'granted') {
+            new Notification(title || 'Test local', { body: message || 'Notification directe' });
+            addLog('Notification directe affichée (fallback)');
+          } else {
+            addLog('Permission non accordée pour fallback', true);
+          }
+        } catch (e) {
+          addLog('Fallback échoué: ' + e.message, true);
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
 
-    // ----- RENDU -----
     return (
       <div className="bg-[#1b2126] rounded-3xl p-6 border border-[#242c33] shadow-xl">
         <div className="text-center mb-6">
@@ -323,53 +333,28 @@
           {status}
         </div>
 
-        {/* Champs communs */}
         <div className="space-y-3 mb-6">
           <div>
             <label className="text-xs text-[#718096] block mb-1">Titre</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]"
-              placeholder="Titre"
-            />
+            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]" />
           </div>
           <div>
             <label className="text-xs text-[#718096] block mb-1">Message</label>
-            <input
-              type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]"
-              placeholder="Message"
-            />
+            <input type="text" value={message} onChange={(e) => setMessage(e.target.value)} className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]" />
           </div>
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <label className="text-xs text-[#718096] block mb-1">Délai ntfy (secondes)</label>
-              <input
-                type="number"
-                value={delay}
-                onChange={(e) => setDelay(e.target.value)}
-                className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]"
-                placeholder="5"
-                min="0"
-              />
+              <input type="number" value={delay} onChange={(e) => setDelay(e.target.value)} className="w-full bg-[#15191d] border border-[#242c33] rounded-xl px-4 py-2 text-sm text-[#e2e8f0] focus:outline-none focus:border-[#00f2fe]" min="0" />
             </div>
             <div className="flex items-center mt-2">
-              <input
-                type="checkbox"
-                checked={useDelay}
-                onChange={(e) => setUseDelay(e.target.checked)}
-                className="mr-2"
-              />
+              <input type="checkbox" checked={useDelay} onChange={(e) => setUseDelay(e.target.checked)} className="mr-2" />
               <label className="text-xs text-[#718096]">Activer délai</label>
             </div>
           </div>
         </div>
 
-        {/* Bloc NTFY */}
+        {/* NTFY */}
         <div className="border border-[#2b353d] rounded-xl p-4 mb-6">
           <h2 className="text-sm font-semibold text-[#00f2fe] mb-3">📡 NTFY</h2>
           <div className="flex flex-col gap-3">
@@ -390,7 +375,7 @@
           </div>
         </div>
 
-        {/* Bloc ONESIGNAL */}
+        {/* ONESIGNAL */}
         <div className="border border-[#4a2b4a] rounded-xl p-4 mb-6">
           <h2 className="text-sm font-semibold text-[#d6b3ff] mb-3">📱 ONESIGNAL</h2>
           <div className="flex flex-col gap-3">
