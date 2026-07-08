@@ -1,49 +1,23 @@
+// Service Worker POUR LE TEST LOCAL UNIQUEMENT
+// OneSignal utilise son propre Service Worker (OneSignalSDKWorker.js)
+// Celui-ci ne sert qu’à recevoir les messages de la page (test local)
+
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', () => self.clients.claim());
 
-self.addEventListener('push', (event) => {
-  console.log('[SW] Push reçu');
-  if (!event.data) return;
-  try {
-    const payload = event.data.json();
-    const options = {
-      body: payload.message || 'Signal d\'arrière-plan reçu',
-      icon: './icon.png',
-      vibrate: [200, 100, 200],
-      data: { url: payload.click || self.location.origin }
-    };
-    event.waitUntil(
-      self.registration.showNotification(payload.title || 'Notification Native', options)
-    );
-  } catch (err) {
-    event.waitUntil(
-      self.registration.showNotification('Alerte Kool', {
-        body: event.data.text(),
-        vibrate: [100, 50, 100]
-      })
-    );
-  }
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const targetUrl = event.notification.data?.url || self.location.origin;
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (let client of windowClients) {
-        if (client.url === targetUrl && 'focus' in client) return client.focus();
-      }
-      if (clients.openWindow) return clients.openWindow(targetUrl);
-    })
-  );
-});
-
+// Écouteur pour les messages venant de la page (test local)
 self.addEventListener('message', (event) => {
-  if (event.data.type === 'TEST') {
-    self.registration.showNotification(event.data.title || 'Test local', {
-      body: event.data.message || 'Notification instantanée',
+  console.log('[SW] Message reçu:', event.data);
+  if (event.data && event.data.type === 'TEST') {
+    const title = event.data.title || 'Test local';
+    const body = event.data.message || 'Notification instantanée';
+    self.registration.showNotification(title, {
+      body: body,
       icon: './icon.png',
-      vibrate: [100, 50, 100]
+      vibrate: [100, 50, 100],
     });
   }
 });
+
+// ⚠️ IMPORTANT : On ne met PAS d'écouteur 'push' ici.
+// C'est OneSignalSDKWorker.js qui gère les push OneSignal.
