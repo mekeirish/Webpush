@@ -28,9 +28,8 @@
 
   <script type="text/babel">
     const APP_ID = '893ad5cf-804c-4e1c-a564-b5f3afbe3c75';
-
-    // ✅ Plus besoin de la clé API ici ! Elle est dans le Worker.
-    // Plus de proxy, plus de CORS, plus de clé exposée.
+    // ✅ URL de ton NOUVEAU Worker Cloudflare
+    const WORKER_URL = 'https://delicate-sound-7edb.mmm1747lb.workers.dev';
 
     function App() {
       const [status, setStatus] = React.useState('Initialisation...');
@@ -141,24 +140,26 @@
         };
 
         try {
-          // ✅ Appel au Worker Cloudflare (plus de CORS, plus de proxy)
-          const response = await fetch('https://wild-pond-b382.mmm1747lb.workers.dev', {
+          addLog('Appel au Worker: ' + WORKER_URL);
+          const response = await fetch(WORKER_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
 
-          if (!response.ok) {
-            const errText = await response.text();
-            throw new Error('HTTP ' + response.status + ' - ' + errText);
-          }
+          addLog('Statut HTTP: ' + response.status);
           const data = await response.json();
+          addLog('Réponse du Worker: ' + JSON.stringify(data));
+
+          if (!response.ok) {
+            throw new Error('HTTP ' + response.status + ' - ' + (data.errors ? data.errors.join(', ') : ''));
+          }
           addLog('✅ Envoyée via Worker (id: ' + data.id + ')');
           setStatus('✅ Envoyé !');
         } catch (err) {
           let msg = err.message;
           if (msg === 'Failed to fetch') {
-            msg = 'Impossible de joindre le Worker. Vérifie que l\'URL est correcte.';
+            msg = '⚠️ Impossible de joindre le Worker. Vérifie que l\'URL "' + WORKER_URL + '" est accessible.';
           }
           setStatus('❌ Erreur envoi');
           addLog('Erreur: ' + msg, true);
@@ -167,19 +168,22 @@
         }
       };
 
-      // ----- Test local (via le Service Worker fusionné) -----
+      // ----- TEST LOCAL -----
       const handleLocalTest = async () => {
         setLoading(true);
         addLog('=== TEST LOCAL ===');
         try {
           const reg = await navigator.serviceWorker.ready;
-          if (!reg || !reg.active) throw new Error('Aucun Service Worker actif');
+          if (!reg || !reg.active) {
+            throw new Error('Aucun Service Worker actif');
+          }
+          addLog('Service Worker actif: ' + reg.active.scriptURL);
           reg.active.postMessage({
             type: 'TEST',
             title: title || 'Test local',
             message: message || 'Notification instantanée',
           });
-          addLog('Message envoyé au Service Worker actif');
+          addLog('Message envoyé au Service Worker');
           setStatus('🧪 Test local envoyé');
         } catch (err) {
           addLog('Erreur test local: ' + err.message, true);
