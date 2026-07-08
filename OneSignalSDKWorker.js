@@ -1,7 +1,5 @@
-// 1. On importe le SDK OneSignal (obligatoire)
 importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 
-// 2. Ton code de test local (qui écoute le postMessage)
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'TEST') {
     const title = event.data.title || 'Test local';
