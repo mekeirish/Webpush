@@ -1,0 +1,25 @@
+name: Send Push Notification
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  send_push:
+    if: contains(github.event.issue.labels.*.name, 'PUSH')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Envoyer la notification via OneSignal
+        run: |
+          TITLE="${{ github.event.issue.title }}"
+          BODY="${{ github.event.issue.body }}"
+          curl -X POST https://onesignal.com/api/v1/notifications \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Basic ${{ secrets.ONESIGNAL_REST_KEY }}" \
+            -d '{
+              "app_id": "893ad5cf-804c-4e1c-a564-b5f3afbe3c75",
+              "contents": { "en": "'"$BODY"'" },
+              "headings": { "en": "'"$TITLE"'" },
+              "included_segments": ["All"],
+              "url": "https://mekeirish.github.io/Webpush/"
+            }'
