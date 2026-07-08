@@ -28,6 +28,8 @@
 
   <script type="text/babel">
     const APP_ID = '893ad5cf-804c-4e1c-a564-b5f3afbe3c75';
+    // NOUVELLE CLÉ API REST (créée le 07/08/2026)
+    const REST_API_KEY = 'os_v2_app_re5nlt4ajrhbzjlewxz27pr4ow6wg4tmq26uc7mhj35vzio3xkmm3w46jbb4b46lt6nenef7n5fnpsw5fkgkvdw42b5mrjj4xpztudy';
 
     function App() {
       const [status, setStatus] = React.useState('Initialisation...');
@@ -120,55 +122,76 @@
         }
       };
 
+      // ----- ENVOI DIRECT VIA API (AVEC LA NOUVELLE CLÉ) -----
+      const handleSend = async () => {
+        if (!isSubscribed) {
+          addLog('Abonnez-vous d’abord', true);
+          return;
+        }
+        setLoading(true);
+        addLog('=== ENVOI API ===');
+        try {
+          const response = await fetch('https://onesignal.com/api/v1/notifications', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Basic ' + REST_API_KEY,
+            },
+            body: JSON.stringify({
+              app_id: APP_ID,
+              contents: { en: message || 'Bonsoir' },
+              headings: { en: title || 'Notification OneSignal' },
+              included_segments: ['All'],
+              url: window.location.href,
+            }),
+          });
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error('HTTP ' + response.status + ' - ' + errText);
+          }
+          const data = await response.json();
+          addLog('✅ Envoyée (id: ' + data.id + ')');
+          setStatus('✅ Envoyé !');
+        } catch (err) {
+          let msg = err.message;
+          if (msg === 'Failed to fetch') {
+            msg = 'Impossible de joindre l\'API OneSignal. Vérifiez la connexion réseau ou que le site est en HTTPS.';
+          }
+          setStatus('❌ Erreur envoi');
+          addLog('Erreur: ' + msg, true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
       // ----- Test local (via OneSignalSDKWorker fusionné) -----
       const handleLocalTest = async () => {
         setLoading(true);
         addLog('=== TEST LOCAL ===');
         try {
-          // On récupère le Service Worker OneSignal
-          let reg = await navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js');
-          if (!reg || !reg.active) {
-            // Si non trouvé, on l'enregistre
-            reg = await navigator.serviceWorker.register('./OneSignalSDKWorker.js');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            if (!reg.active) throw new Error('SW OneSignal non actif');
-          }
+          const reg = await navigator.serviceWorker.ready;
+          if (!reg || !reg.active) throw new Error('Aucun Service Worker actif');
           reg.active.postMessage({
             type: 'TEST',
             title: title || 'Test local',
             message: message || 'Notification instantanée',
           });
-          addLog('Message envoyé au SW OneSignal fusionné');
+          addLog('Message envoyé au Service Worker actif');
           setStatus('🧪 Test local envoyé');
         } catch (err) {
           addLog('Erreur test local: ' + err.message, true);
           setStatus('❌ Erreur test local');
-          // Fallback : on tente d'utiliser le Service Worker lui-même pour afficher une notification
           try {
-            const reg = await navigator.serviceWorker.ready;
-            if (reg && reg.active) {
-              await reg.active.postMessage({
-                type: 'TEST',
-                title: title || 'Test local (fallback)',
-                message: message || 'Notification via SW'
+            if (Notification.permission === 'granted') {
+              new Notification(title || 'Test local', {
+                body: message || 'Notification directe',
               });
-              addLog('✅ Fallback via SW envoyé');
+              addLog('✅ Notification directe affichée (fallback)');
             } else {
-              addLog('Impossible d\'utiliser le SW pour le fallback', true);
+              addLog('Permission non accordée pour fallback', true);
             }
           } catch (e) {
-            addLog('Fallback SW échoué: ' + e.message, true);
-            // Dernier recours : notification directe (peut échouer selon le contexte)
-            try {
-              if (Notification.permission === 'granted') {
-                const notif = new Notification(title || 'Test local', { body: message || 'Notification directe' });
-                addLog('✅ Notification directe (fallback ultime)');
-              } else {
-                addLog('Permission non accordée pour fallback', true);
-              }
-            } catch (e2) {
-              addLog('Fallback direct échoué: ' + e2.message, true);
-            }
+            addLog('Fallback échoué: ' + e.message, true);
           }
         } finally {
           setLoading(false);
@@ -219,6 +242,13 @@
             ) : (
               <>
                 <button
+                  onClick={handleSend}
+                  disabled={loading}
+                  className="w-full py-3 rounded-xl font-semibold bg-[#222a30] text-[#00f2fe] border border-[#2b353d] transition-transform active:scale-95"
+                >
+                  {loading ? 'Envoi...' : '📤 Envoyer via API'}
+                </button>
+                <button
                   onClick={handleLocalTest}
                   disabled={loading}
                   className="w-full py-3 rounded-xl font-semibold bg-[#1a2a2f] text-[#81e6d9] border border-[#2b4a4d] transition-transform active:scale-95"
@@ -238,8 +268,7 @@
 
           <div className="bg-[#15191d] rounded-xl p-3 mb-4 border border-[#242c33]">
             <p className="text-xs text-[#718096] text-center">
-              📤 <strong>Pour envoyer une notification</strong> :<br />
-              Allez dans le tableau de bord OneSignal → <strong>Messages</strong> → <strong>New Push</strong> → envoyez à <strong>"All Subscribed Users"</strong>.
+              📤 <strong>Alternative</strong> : depuis le tableau de bord OneSignal → <strong>Messages</strong> → <strong>New Push</strong> → envoyez à <strong>"All Subscribed Users"</strong>.
             </p>
           </div>
 
