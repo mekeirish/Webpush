@@ -31,9 +31,8 @@
     // ⚠️ Clé exposée pour le test – à déplacer en backend pour la production
     const REST_API_KEY = 'os_v2_app_re5nlt4ajrhbzjlewxz27pr4ov2lv3ijnpzejc5q4nappjyycboqgnhk3udsmmzmzzxodkbvdaf6grnvrgf4b7o7qhm73to6je2uwja';
 
-    // Proxy CORS (utilisé pour contourner les blocages CORS en test)
-    const CORS_PROXY = 'https://corsproxy.io/?';
-    // Alternative gratuite : 'https://api.allorigins.win/raw?url='
+    // NOUVEAU PROXY CORS (supporte POST et conserve les en-têtes)
+    const CORS_PROXY = 'https://thingproxy.freeboard.io/fetch/';
 
     function App() {
       const [status, setStatus] = React.useState('Initialisation...');
@@ -139,7 +138,7 @@
         }
       };
 
-      // ----- Envoi via API REST (avec proxy CORS) -----
+      // ----- Envoi via API REST (avec nouveau proxy) -----
       const handleSend = async () => {
         if (!isSubscribed) {
           addLog('Abonnez-vous d’abord', true);
@@ -161,7 +160,7 @@
           'Authorization': 'Basic ' + REST_API_KEY,
         };
 
-        // Tentative directe (peut échouer à cause des CORS)
+        // Tentative directe (sans proxy, échoue souvent à cause des CORS)
         try {
           addLog('Tentative directe...');
           const response = await fetch('https://onesignal.com/api/v1/notifications', {
@@ -180,10 +179,10 @@
           return;
         } catch (directErr) {
           addLog('Directe échouée: ' + directErr.message, true);
-          // Si échec, on tente via proxy
+          // Si échec, on tente via le nouveau proxy
           try {
-            addLog('Tentative via proxy CORS...');
-            const proxyUrl = CORS_PROXY + encodeURIComponent('https://onesignal.com/api/v1/notifications');
+            addLog('Tentative via nouveau proxy (thingproxy)...');
+            const proxyUrl = CORS_PROXY + 'https://onesignal.com/api/v1/notifications';
             const response = await fetch(proxyUrl, {
               method: 'POST',
               headers: headers,
@@ -199,7 +198,7 @@
           } catch (proxyErr) {
             let msg = proxyErr.message;
             if (msg === 'Failed to fetch') {
-              msg = 'Le proxy CORS est indisponible. Veuillez essayer plus tard ou utiliser un autre proxy.';
+              msg = 'Le proxy est indisponible. Veuillez réessayer ou mettre en place un backend.';
             }
             setStatus('❌ Erreur envoi');
             addLog('Erreur: ' + msg, true);
