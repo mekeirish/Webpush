@@ -3,13 +3,19 @@ name: Send Push Notification
 on:
   issues:
     types: [opened, labeled]
+  workflow_dispatch:  # ← Ajout pour déclenchement manuel
 
 jobs:
   send_push:
-    if: contains(github.event.issue.labels.*.name, 'PUSH')
+    if: contains(github.event.issue.labels.*.name, 'PUSH') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Envoyer la notification via OneSignal
+      - name: Afficher les infos
+        run: |
+          echo "Titre: ${{ github.event.issue.title }}"
+          echo "Corps: ${{ github.event.issue.body }}"
+
+      - name: Envoyer la notification
         run: |
           TITLE="${{ github.event.issue.title }}"
           BODY="${{ github.event.issue.body }}"
