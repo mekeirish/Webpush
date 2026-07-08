@@ -29,9 +29,6 @@
   <script type="text/babel">
     const APP_ID = '893ad5cf-804c-4e1c-a564-b5f3afbe3c75';
 
-    // ⚠️ La clé API REST n'est PLUS nécessaire dans le code client.
-    // Les envois se feront depuis le tableau de bord OneSignal.
-
     function App() {
       const [status, setStatus] = React.useState('Initialisation...');
       const [isSubscribed, setIsSubscribed] = React.useState(false);
@@ -128,14 +125,13 @@
         setLoading(true);
         addLog('=== TEST LOCAL ===');
         try {
-          // On envoie le message au Service Worker fusionné (OneSignalSDKWorker)
-          const reg = await navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js');
+          // On récupère le Service Worker OneSignal
+          let reg = await navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js');
           if (!reg || !reg.active) {
-            // Si non trouvé, on enregistre OneSignalSDKWorker.js
-            const newReg = await navigator.serviceWorker.register('./OneSignalSDKWorker.js');
+            // Si non trouvé, on l'enregistre
+            reg = await navigator.serviceWorker.register('./OneSignalSDKWorker.js');
             await new Promise(resolve => setTimeout(resolve, 1000));
-            if (!newReg.active) throw new Error('SW OneSignal non actif');
-            reg = newReg;
+            if (!reg.active) throw new Error('SW OneSignal non actif');
           }
           reg.active.postMessage({
             type: 'TEST',
@@ -147,16 +143,32 @@
         } catch (err) {
           addLog('Erreur test local: ' + err.message, true);
           setStatus('❌ Erreur test local');
-          // Fallback direct
+          // Fallback : on tente d'utiliser le Service Worker lui-même pour afficher une notification
           try {
-            if (Notification.permission === 'granted') {
-              new Notification(title || 'Test local', { body: message || 'Notification directe' });
-              addLog('✅ Notification directe (fallback)');
+            const reg = await navigator.serviceWorker.ready;
+            if (reg && reg.active) {
+              await reg.active.postMessage({
+                type: 'TEST',
+                title: title || 'Test local (fallback)',
+                message: message || 'Notification via SW'
+              });
+              addLog('✅ Fallback via SW envoyé');
             } else {
-              addLog('Permission non accordée pour fallback', true);
+              addLog('Impossible d\'utiliser le SW pour le fallback', true);
             }
           } catch (e) {
-            addLog('Fallback échoué: ' + e.message, true);
+            addLog('Fallback SW échoué: ' + e.message, true);
+            // Dernier recours : notification directe (peut échouer selon le contexte)
+            try {
+              if (Notification.permission === 'granted') {
+                const notif = new Notification(title || 'Test local', { body: message || 'Notification directe' });
+                addLog('✅ Notification directe (fallback ultime)');
+              } else {
+                addLog('Permission non accordée pour fallback', true);
+              }
+            } catch (e2) {
+              addLog('Fallback direct échoué: ' + e2.message, true);
+            }
           }
         } finally {
           setLoading(false);
