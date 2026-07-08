@@ -28,11 +28,9 @@
 
   <script type="text/babel">
     const APP_ID = '893ad5cf-804c-4e1c-a564-b5f3afbe3c75';
-    // ⚠️ Clé exposée pour le test – à déplacer en backend pour la production
-    const REST_API_KEY = 'os_v2_app_re5nlt4ajrhbzjlewxz27pr4ov2lv3ijnpzejc5q4nappjyycboqgnhk3udsmmzmzzxodkbvdaf6grnvrgf4b7o7qhm73to6je2uwja';
 
-    // NOUVEAU PROXY CORS (supporte POST et conserve les en-têtes)
-    const CORS_PROXY = 'https://thingproxy.freeboard.io/fetch/';
+    // ⚠️ La clé API REST n'est PLUS nécessaire dans le code client.
+    // Les envois se feront depuis le tableau de bord OneSignal.
 
     function App() {
       const [status, setStatus] = React.useState('Initialisation...');
@@ -56,18 +54,6 @@
         );
       };
 
-      // Enregistrement du Service Worker local
-      const registerLocalSW = async () => {
-        try {
-          const reg = await navigator.serviceWorker.register('./sw.js');
-          addLog('Service Worker local enregistré ✓');
-          return reg;
-        } catch (err) {
-          addLog('Erreur enregistrement SW local: ' + err.message, true);
-          return null;
-        }
-      };
-
       const checkOneSignalStatus = async () => {
         try {
           if (window.OneSignal) {
@@ -85,7 +71,6 @@
 
       React.useEffect(() => {
         addLog('Application démarrée');
-        registerLocalSW();
         if (navigator.standalone) {
           addLog('📱 PWA installée (iOS)');
         } else {
@@ -138,86 +123,18 @@
         }
       };
 
-      // ----- Envoi via API REST (avec nouveau proxy) -----
-      const handleSend = async () => {
-        if (!isSubscribed) {
-          addLog('Abonnez-vous d’abord', true);
-          return;
-        }
-        setLoading(true);
-        addLog('=== ENVOI API ===');
-
-        const payload = {
-          app_id: APP_ID,
-          contents: { en: message || 'Bonsoir' },
-          headings: { en: title || 'Notification OneSignal' },
-          included_segments: ['All'],
-          url: window.location.href,
-        };
-
-        const headers = {
-          'Content-Type': 'application/json',
-          'Authorization': 'Basic ' + REST_API_KEY,
-        };
-
-        // Tentative directe (sans proxy, échoue souvent à cause des CORS)
-        try {
-          addLog('Tentative directe...');
-          const response = await fetch('https://onesignal.com/api/v1/notifications', {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(payload),
-          });
-          if (!response.ok) {
-            const errText = await response.text();
-            throw new Error('HTTP ' + response.status + ' - ' + errText);
-          }
-          const data = await response.json();
-          addLog('✅ Envoyée (id: ' + data.id + ')');
-          setStatus('✅ Envoyé !');
-          setLoading(false);
-          return;
-        } catch (directErr) {
-          addLog('Directe échouée: ' + directErr.message, true);
-          // Si échec, on tente via le nouveau proxy
-          try {
-            addLog('Tentative via nouveau proxy (thingproxy)...');
-            const proxyUrl = CORS_PROXY + 'https://onesignal.com/api/v1/notifications';
-            const response = await fetch(proxyUrl, {
-              method: 'POST',
-              headers: headers,
-              body: JSON.stringify(payload),
-            });
-            if (!response.ok) {
-              const errText = await response.text();
-              throw new Error('Proxy HTTP ' + response.status + ' - ' + errText);
-            }
-            const data = await response.json();
-            addLog('✅ Envoyée via proxy (id: ' + data.id + ')');
-            setStatus('✅ Envoyé !');
-          } catch (proxyErr) {
-            let msg = proxyErr.message;
-            if (msg === 'Failed to fetch') {
-              msg = 'Le proxy est indisponible. Veuillez réessayer ou mettre en place un backend.';
-            }
-            setStatus('❌ Erreur envoi');
-            addLog('Erreur: ' + msg, true);
-          }
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      // ----- Test local (SW) -----
+      // ----- Test local (via OneSignalSDKWorker fusionné) -----
       const handleLocalTest = async () => {
         setLoading(true);
         addLog('=== TEST LOCAL ===');
         try {
-          let reg = await navigator.serviceWorker.getRegistration('./sw.js');
+          // On envoie le message au Service Worker fusionné (OneSignalSDKWorker)
+          const reg = await navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js');
           if (!reg || !reg.active) {
-            const newReg = await navigator.serviceWorker.register('./sw.js');
+            // Si non trouvé, on enregistre OneSignalSDKWorker.js
+            const newReg = await navigator.serviceWorker.register('./OneSignalSDKWorker.js');
             await new Promise(resolve => setTimeout(resolve, 1000));
-            if (!newReg.active) throw new Error('SW local non actif');
+            if (!newReg.active) throw new Error('SW OneSignal non actif');
             reg = newReg;
           }
           reg.active.postMessage({
@@ -225,11 +142,12 @@
             title: title || 'Test local',
             message: message || 'Notification instantanée',
           });
-          addLog('Message envoyé au SW local');
+          addLog('Message envoyé au SW OneSignal fusionné');
           setStatus('🧪 Test local envoyé');
         } catch (err) {
           addLog('Erreur test local: ' + err.message, true);
           setStatus('❌ Erreur test local');
+          // Fallback direct
           try {
             if (Notification.permission === 'granted') {
               new Notification(title || 'Test local', { body: message || 'Notification directe' });
@@ -289,11 +207,11 @@
             ) : (
               <>
                 <button
-                  onClick={handleSend}
+                  onClick={handleLocalTest}
                   disabled={loading}
-                  className="w-full py-3 rounded-xl font-semibold bg-[#222a30] text-[#00f2fe] border border-[#2b353d] transition-transform active:scale-95"
+                  className="w-full py-3 rounded-xl font-semibold bg-[#1a2a2f] text-[#81e6d9] border border-[#2b4a4d] transition-transform active:scale-95"
                 >
-                  {loading ? 'Envoi...' : '📤 Envoyer'}
+                  {loading ? 'Test...' : '🧪 Test local'}
                 </button>
                 <button
                   onClick={handleUnsubscribe}
@@ -304,13 +222,13 @@
                 </button>
               </>
             )}
-            <button
-              onClick={handleLocalTest}
-              disabled={loading}
-              className="w-full py-3 rounded-xl font-semibold bg-[#1a2a2f] text-[#81e6d9] border border-[#2b4a4d] transition-transform active:scale-95"
-            >
-              {loading ? 'Test...' : '🧪 Test local (SW)'}
-            </button>
+          </div>
+
+          <div className="bg-[#15191d] rounded-xl p-3 mb-4 border border-[#242c33]">
+            <p className="text-xs text-[#718096] text-center">
+              📤 <strong>Pour envoyer une notification</strong> :<br />
+              Allez dans le tableau de bord OneSignal → <strong>Messages</strong> → <strong>New Push</strong> → envoyez à <strong>"All Subscribed Users"</strong>.
+            </p>
           </div>
 
           <div className="mt-4">
